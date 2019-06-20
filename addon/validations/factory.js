@@ -95,7 +95,7 @@ const VALIDATION_COUNT_MAP = new WeakMap();
 export default function buildValidations(validations = {}, globalOptions = {}) {
   normalizeOptions(validations, globalOptions);
 
-  let Validations, validationMixinCount;
+  let validationMixinCount;
 
   return Mixin.create({
     init() {
@@ -106,19 +106,16 @@ export default function buildValidations(validations = {}, globalOptions = {}) {
       VALIDATION_COUNT_MAP.set(this, validationMixinCount);
     },
     [VALIDATIONS_CLASS]: computed(function() {
-      if (!Validations) {
-        let inheritedClass;
+      let inheritedClass;
 
-        if (
-          shouldCallSuper(this, VALIDATIONS_CLASS) ||
-          validationMixinCount > 1
-        ) {
-          inheritedClass = this._super();
-        }
-
-        Validations = createValidationsClass(inheritedClass, validations, this);
+      if (
+        shouldCallSuper(this, VALIDATIONS_CLASS) ||
+        validationMixinCount > 1
+      ) {
+        inheritedClass = this._super();
       }
-      return Validations;
+
+      return createValidationsClass(inheritedClass, validations, this);
     }).readOnly(),
 
     validations: computed(function() {
@@ -139,7 +136,10 @@ export default function buildValidations(validations = {}, globalOptions = {}) {
 
     destroy() {
       this._super(...arguments);
-      get(this, 'validations').destroy();
+
+      if (Ember.cacheFor(this, 'validations')) {
+        get(this, 'validations').destroy();
+      }
     }
   });
 }
@@ -273,6 +273,7 @@ function createValidationsClass(inheritedValidationsClass, validations, model) {
 
       // Initiate attrs destroy to cleanup any remaining model references
       this.get('attrs').destroy();
+      this.set('model', null);
 
       // Cancel all debounced timers
       validatableAttrs.forEach(attr => {
@@ -391,6 +392,7 @@ function createAttrsClass(validatableAttributes, validationRules, model) {
     });
   });
 
+  model = null;
   return AttrsClass;
 }
 
@@ -755,9 +757,8 @@ function createValidatorsFor(attribute, model) {
   }
 
   validationRules.forEach(v => {
-    v.attribute = attribute;
-    v.model = model;
-    validators.push(lookupValidator(owner, v._type).create(v));
+    let copy = Object.assign({ attribute, model }, v);
+    validators.push(lookupValidator(owner, v._type).create(copy));
   });
 
   // Add validators to model instance cache
